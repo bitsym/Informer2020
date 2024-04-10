@@ -378,66 +378,66 @@ class Dataset_Pred(Dataset):
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
 class CurvesOT1(Dataset):
-    def __init__(self, root_path, flag='train', size=None, features='MS', 
-                 data_path='CurvesOT1.csv', target='OT1', scale=True, 
-                 inverse=False, timeenc=0, freq='h', cols=None):
+    def __init__(self, root_path, flag='train', size=None, features='S', data_path='CurvesT1.csv', 
+                 target='OT1', scale=True, inverse=False, timeenc=0, freq='h', cols=None):
+        # Initialize dataset parameters, size defaults provided
+        if size is None:
+            self.seq_len = 24  # Adjust based on your model's input expectation
+            self.label_len = 24  # Adjust as needed
+            self.pred_len = 24  # Adjust as needed
+        else:
+            self.seq_len, self.label_len, self.pred_len = size
+        
         assert flag in ['train', 'test', 'val']
         type_map = {'train': 0, 'val': 1, 'test': 2}
         self.set_type = type_map[flag]
         
-        self.seq_len, self.label_len, self.pred_len = (96, 24, 24) if size is None else size
         self.features = features
         self.target = target
         self.scale = scale
         self.inverse = inverse
-        self.timeenc = timeenc
+        self.timeenc = timeenc  # Note: Adjust usage as dataset lacks datetime
         self.freq = freq
         self.cols = cols
         self.root_path = root_path
         self.data_path = data_path
         
         self.__read_data__()
+
     def __read_data__(self):
+        # Custom scaler or use from sklearn.preprocessing
         self.scaler = StandardScaler()
-        try:
-            df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path), encoding='utf-8')
-        except UnicodeDecodeError:
-            df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path), encoding='ISO-8859-1')
-    
-        if self.cols:
-            cols = self.cols.copy()
-            cols.remove(self.target)
-        else:
-            cols = list(df_raw.columns)
-            cols.remove(self.target)
+        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
         
-        df_raw = df_raw[cols + [self.target]]
-        
-        num_train = int(len(df_raw) * 0.7)
-        num_test = int(len(df_raw) * 0.2)
-        border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
-        border2s = [num_train, num_train + len(df_raw) - num_train - num_test, len(df_raw)]
+        # Assuming the entire dataset is used, adjust indices for train/test/val
+        num_entries = len(df_raw)
+        num_train = int(num_entries * 0.7)
+        num_val = int(num_entries * 0.2)
+        num_test = num_entries - num_train - num_val
+        border1s = [0, num_train, num_train + num_val]
+        border2s = [num_train, num_train + num_val, num_entries]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
+
+        if self.cols:
+            cols = self.cols.copy()
+            if self.target in cols:
+                cols.remove(self.target)
+        else:
+            cols = ['LOCATION', 'X SERIAL', 'Y SERIAL', 'Z SERIAL']  # Adjust as necessary
         
-        df_data = df_raw[[self.target]] if self.features == 'S' else df_raw[cols]
-        
+        df_data = df_raw[cols]
         if self.scale:
-            train_data = df_data.iloc[border1s[0]:border2s[0]]
+            train_data = df_data.iloc[:num_train]
             self.scaler.fit(train_data.values)
             data = self.scaler.transform(df_data.values)
         else:
             data = df_data.values
         
-        # Since we're not using the date column, time features will not be directly derived from it
-        # If you need to include time-based features, ensure to adapt this part according to your requirements
-        # data_stamp could be derived from other methods if necessary
-        
         self.data_x = data[border1:border2]
-        self.data_y = data[border1:border2] if not self.inverse else df_data.values[border1:border2]
-        # Assuming data_stamp is not required without the date; remove or modify accordingly
-        # self.data_stamp = data_stamp
-
+        self.data_y = df_raw[[self.target]].values[border1:border2]
+        # No date stamp required given dataset structure
+        
     def __getitem__(self, index):
         s_begin = index
         s_end = s_begin + self.seq_len
@@ -446,12 +446,12 @@ class CurvesOT1(Dataset):
 
         seq_x = self.data_x[s_begin:s_end]
         seq_y = self.data_y[r_begin:r_end]
-        # seq_x_mark and seq_y_mark are omitted as they're related to date-time features
-        
-        return seq_x, seq_y # , seq_x_mark, seq_y_mark removed
 
+        return seq_x, seq_y
+    
     def __len__(self):
         return len(self.data_x) - self.seq_len - self.pred_len + 1
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
+
