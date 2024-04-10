@@ -397,11 +397,13 @@ class CurvesOT1(Dataset):
         self.data_path = data_path
         
         self.__read_data__()
-
     def __read_data__(self):
         self.scaler = StandardScaler()
-        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
-        
+        try:
+            df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path), encoding='utf-8')
+        except UnicodeDecodeError:
+            df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path), encoding='ISO-8859-1')
+    
         if self.cols:
             cols = self.cols.copy()
             cols.remove(self.target)
